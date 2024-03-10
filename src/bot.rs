@@ -4,7 +4,7 @@ use crate::{
     logs::extract::{extract_channel_and_user_from_raw, extract_raw_timestamp},
     ShutdownRx,
 };
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow};
 use chrono::Utc;
 use lazy_static::lazy_static;
 use prometheus::{register_int_counter_vec, IntCounterVec};
@@ -21,7 +21,7 @@ use twitch_irc::{
 };
 
 const CHANNEL_REJOIN_INTERVAL_SECONDS: u64 = 3600;
-const CHANENLS_REFETCH_RETRY_INTERVAL_SECONDS: u64 = 5;
+const CHANNELS_REFETCH_RETRY_INTERVAL_SECONDS: u64 = 5;
 
 type TwitchClient<C> = TwitchIRCClient<SecureTCPTransport, C>;
 
@@ -92,7 +92,7 @@ impl Bot {
                     }
                     Err(err) => {
                         error!("Could not fetch users list: {err}");
-                        CHANENLS_REFETCH_RETRY_INTERVAL_SECONDS
+                        CHANNELS_REFETCH_RETRY_INTERVAL_SECONDS
                     }
                 };
                 sleep(Duration::from_secs(interval)).await;
@@ -156,7 +156,7 @@ impl Bot {
             trace!("Processing message {}", privmsg.message_text);
             if let Some(cmd) = privmsg.message_text.strip_prefix(COMMAND_PREFIX) {
                 if let Err(err) = self
-                    .handle_command(cmd, client, &privmsg.sender.id, &privmsg.sender.login)
+                    .handle_command(cmd, client, &privmsg.sender.login)
                     .await
                 {
                     warn!("Could not handle command {cmd}: {err:#}");
@@ -202,10 +202,6 @@ impl Bot {
                 .unwrap_or_else(|| Utc::now().timestamp_millis().try_into().unwrap());
             let user_id = maybe_user_id.unwrap_or_default().to_owned();
 
-            if self.app.config.opt_out.contains_key(&user_id) {
-                return Ok(());
-            }
-
             let message = Message {
                 channel_id: Cow::Owned(channel_id.to_owned()),
                 user_id: Cow::Owned(user_id),
@@ -222,7 +218,6 @@ impl Bot {
         &self,
         cmd: &str,
         client: &TwitchClient<C>,
-        sender_id: &str,
         sender_login: &str,
     ) -> anyhow::Result<()> {
         debug!("Processing command {cmd}");
@@ -241,36 +236,11 @@ impl Bot {
                     self.update_channels(client, &args, ChannelAction::Part)
                         .await?
                 }
-                "optout" => {
-                    self.optout_user(&args, sender_login, sender_id).await?;
-                }
                 _ => (),
             }
         }
 
         Ok(())
-    }
-
-    async fn optout_user(
-        &self,
-        args: &[&str],
-        sender_login: &str,
-        sender_id: &str,
-    ) -> anyhow::Result<()> {
-        let arg = args.first().context("No optout code provided")?;
-        if self.app.optout_codes.remove(*arg).is_some() {
-            self.app.optout_user(sender_id).await?;
-
-            Ok(())
-        } else if self.check_admin(sender_login).is_ok() {
-            let user_id = self.app.get_user_id_by_name(arg).await?;
-
-            self.app.optout_user(&user_id).await?;
-
-            Ok(())
-        } else {
-            Err(anyhow!("Invalid optout code"))
-        }
     }
 
     async fn update_channels<C: LoginCredentials>(

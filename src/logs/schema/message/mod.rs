@@ -2,7 +2,7 @@ mod basic;
 mod full;
 
 pub use basic::BasicMessage;
-pub use full::{FullMessage, MessageType};
+pub use full::FullMessage;
 
 use serde::Serialize;
 
