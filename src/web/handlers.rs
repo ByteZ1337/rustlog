@@ -285,8 +285,9 @@ pub async fn list_available_logs(
         app.check_opted_out(&channel_id, Some(&user_id))?;
         read_available_user_logs(&app.db, &channel_id, &user_id).await?
     } else {
-        app.check_opted_out(&channel_id, None)?;
-        read_available_channel_logs(&app.db, &channel_id).await?
+        return Err(Error::NotFound);
+        // app.check_opted_out(&channel_id, None)?;
+        // read_available_channel_logs(&app.db, &channel_id).await?
     };
 
     if !available_logs.is_empty() {

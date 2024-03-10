@@ -53,6 +53,7 @@ pub async fn run(app: App, mut shutdown_rx: ShutdownRx, bot_tx: Sender<BotMessag
 
     let mut api = OpenApi::default();
 
+    // TODO: move full channel log routes and metrics to admin
     let admin_routes = ApiRouter::new()
         .api_route(
             "/channels",
@@ -82,12 +83,12 @@ pub async fn run(app: App, mut shutdown_rx: ShutdownRx, bot_tx: Sender<BotMessag
                 op.description("List available logs")
             }),
         )
-        .api_route(
-            "/:channel_id_type/:channel",
-            get_with(handlers::get_channel_logs, |op| {
-                op.description("Get channel logs. If the `to` and `from` query params are not given, redirect to latest available day")
-            }),
-        )
+        // .api_route(
+        //     "/:channel_id_type/:channel",
+        //     get_with(handlers::get_channel_logs, |op| {
+        //         op.description("Get channel logs. If the `to` and `from` query params are not given, redirect to latest available day")
+        //     }),
+        // )
         // For some reason axum considers it a path overlap if user id type is dynamic
         .api_route(
             "/:channel_id_type/:channel/user/:user",
@@ -101,12 +102,12 @@ pub async fn run(app: App, mut shutdown_rx: ShutdownRx, bot_tx: Sender<BotMessag
                 op.description("Get user logs by id. If the `to` and `from` query params are not given, redirect to latest available month")
             }),
         )
-        .api_route(
-            "/:channel_id_type/:channel/:year/:month/:day",
-            get_with(handlers::get_channel_logs_by_date, |op| {
-                op.description("Get channel logs from the given day")
-            }),
-        )
+        // .api_route(
+        //     "/:channel_id_type/:channel/:year/:month/:day",
+        //     get_with(handlers::get_channel_logs_by_date, |op| {
+        //         op.description("Get channel logs from the given day")
+        //     }),
+        // )
         .api_route(
             "/:channel_id_type/:channel/user/:user/:year/:month",
             get_with(handlers::get_user_logs_by_date_name, |op| {
@@ -139,8 +140,8 @@ pub async fn run(app: App, mut shutdown_rx: ShutdownRx, bot_tx: Sender<BotMessag
         )
         .api_route("/optout", post(handlers::optout))
         .api_route("/capabilities", get(capabilities))
-        .route("/docs", Redoc::new("/openapi.json").axum_route())
-        .route("/openapi.json", get(serve_openapi))
+        // .route("/docs", Redoc::new("/openapi.json").axum_route())
+        // .route("/openapi.json", get(serve_openapi))
         .route("/assets/*asset", get(frontend::static_asset))
         .fallback(frontend::static_asset)
         .layer(middleware::from_fn(capabilities_header_middleware))
@@ -154,7 +155,7 @@ pub async fn run(app: App, mut shutdown_rx: ShutdownRx, bot_tx: Sender<BotMessag
                 .with_prefix("rustlog")
                 .build(),
         )
-        .route("/metrics", get(metrics))
+        // .route("/metrics", get(metrics))
         .finish_api(&mut api)
         .layer(Extension(Arc::new(api)))
         .with_state(app)
