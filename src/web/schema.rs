@@ -1,7 +1,9 @@
-use super::responders::logs::{JsonResponseType, LogsResponseType};
+use std::fmt::Display;
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
-use std::fmt::Display;
+
+use super::responders::logs::{JsonResponseType, LogsResponseType};
 
 #[derive(Serialize, JsonSchema)]
 pub struct ChannelsList {
@@ -127,6 +129,14 @@ impl Display for AvailableLogDate {
 
         Ok(())
     }
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct UserHasLogs {
+    /// User ID
+    pub user: String,
+    /// Whether the user has logs in the channel
+    pub has_logs: bool,
 }
 
 #[derive(Deserialize, JsonSchema)]

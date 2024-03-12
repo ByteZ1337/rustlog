@@ -66,6 +66,13 @@ pub async fn run(app: App, mut shutdown_rx: ShutdownRx, bot_tx: Sender<BotMessag
                 op.tag("Admin").description("Leave the specified channels")
             }),
         )
+        .api_route(
+            "/check-users",
+            post_with(admin::check_users_existence, |mut op| {
+                admin::admin_auth_doc(&mut op);
+                op.tag("Admin").description("Check if the specified users have logs in the specified channel")
+            }),
+        )
         .route_layer(middleware::from_fn_with_state(app.clone(), admin_auth))
         .layer(Extension(bot_tx));
 

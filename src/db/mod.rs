@@ -1,19 +1,22 @@
-mod migrations;
-pub mod schema;
-pub mod writer;
+use std::collections::HashMap;
+use chrono::{Datelike, DateTime, Duration, NaiveDateTime, Utc};
+use clickhouse::{Client, query::RowCursor};
+use rand::{seq::IteratorRandom, thread_rng};
+use tracing::debug;
 
 pub use migrations::run as setup_db;
 
 use crate::{
     error::Error,
     logs::{schema::LogRangeParams, stream::LogsStream},
-    web::schema::AvailableLogDate,
     Result,
+    web::schema::AvailableLogDate,
 };
-use chrono::{DateTime, Datelike, Duration, NaiveDateTime, Utc};
-use clickhouse::{query::RowCursor, Client};
-use rand::{seq::IteratorRandom, thread_rng};
-use tracing::debug;
+use crate::web::schema::UserHasLogs;
+
+mod migrations;
+pub mod schema;
+pub mod writer;
 
 const CHANNEL_MULTI_QUERY_SIZE_DAYS: i64 = 14;
 
@@ -252,6 +255,35 @@ pub async fn read_random_channel_line(db: &Client, channel_id: &str) -> Result<S
         .ok_or(Error::NotFound)?;
 
     Ok(text)
+}
+
+pub async fn check_users_exist(db: &Client, channel_id: &str, user_ids: &[String]) -> Result<Vec<UserHasLogs>> {
+    if user_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let placeholders = user_ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+    let query = format!("SELECT user_id FROM message WHERE channel_id = ? AND user_id IN ({}) GROUP BY user_id", placeholders);
+
+    let mut query_builder = db.query(&query).bind(channel_id);
+    for user_id in user_ids {
+        query_builder = query_builder.bind(user_id);
+    }
+
+    let mut user_has_logs = user_ids
+        .iter()
+        .map(|id| (id.clone(), UserHasLogs {
+            user: id.clone(),
+            has_logs: false,
+        })).collect::<HashMap<String, UserHasLogs>>();
+
+    query_builder.fetch_all::<String>().await?.into_iter().for_each(|user_id| {
+        if let Some(user) = user_has_logs.get_mut(&user_id) {
+            user.has_logs = true;
+        }
+    });
+
+    Ok(user_has_logs.into_values().collect())
 }
 
 fn apply_limit_offset(query: &mut String, limit: Option<u64>, offset: Option<u64>) {
