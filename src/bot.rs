@@ -4,7 +4,7 @@ use crate::{
     logs::extract::{extract_channel_and_user_from_raw, extract_raw_timestamp},
     ShutdownRx,
 };
-use anyhow::{anyhow, Context};
+use anyhow::anyhow;
 use chrono::Utc;
 use lazy_static::lazy_static;
 use prometheus::{register_int_counter_vec, IntCounterVec};

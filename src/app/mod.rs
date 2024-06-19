@@ -1,10 +1,9 @@
 use std::{collections::HashMap, sync::Arc};
 use dashmap::DashSet;
-use twitch_api2::{helix::users::GetUsersRequest, HelixClient, twitch_oauth2::AppAccessToken};
 use crate::{config::Config, error::Error, Result};
 use self::cache::UsersCache;
 pub mod cache;
-use tracing::{debug, info};
+use tracing::{debug};
 use twitch_api::{helix::users::GetUsersRequest, twitch_oauth2::AppAccessToken, HelixClient};
 
 #[derive(Clone)]

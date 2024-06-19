@@ -13,7 +13,6 @@ use aide::{
         ApiRouter, IntoApiResponse,
     },
     openapi::OpenApi,
-    redoc::Redoc,
 };
 use axum::{
     extract::Request,

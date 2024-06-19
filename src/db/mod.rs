@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use chrono::{Datelike, DateTime, Duration, NaiveDateTime, Utc};
+use chrono::{Datelike, DateTime, Duration, Utc};
 use clickhouse::{Client, query::RowCursor};
 use rand::{seq::IteratorRandom, thread_rng};
 use tracing::debug;
