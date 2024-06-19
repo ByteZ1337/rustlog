@@ -1,4 +1,4 @@
-use twitch::Tag;
+use tmi::Tag;
 use twitch_irc::message::IRCMessage;
 
 pub trait MessageWithTags {
@@ -14,7 +14,7 @@ impl MessageWithTags for IRCMessage {
     }
 }
 
-impl MessageWithTags for twitch::Message {
+impl MessageWithTags for tmi::IrcMessageRef<'_> {
     fn get_tag(&self, key: Tag) -> Option<&str> {
         self.tag(key)
     }

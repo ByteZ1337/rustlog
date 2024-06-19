@@ -1,10 +1,11 @@
 use std::{collections::HashMap, sync::Arc};
 use dashmap::DashSet;
-use tracing::{debug};
 use twitch_api2::{helix::users::GetUsersRequest, HelixClient, twitch_oauth2::AppAccessToken};
 use crate::{config::Config, error::Error, Result};
 use self::cache::UsersCache;
 pub mod cache;
+use tracing::{debug, info};
+use twitch_api::{helix::users::GetUsersRequest, twitch_oauth2::AppAccessToken, HelixClient};
 
 #[derive(Clone)]
 pub struct App {
@@ -21,28 +22,34 @@ impl App {
         &self,
         ids: Vec<String>,
         names: Vec<String>,
+        ignore_cache: bool,
     ) -> Result<HashMap<String, String>> {
         let mut users = HashMap::new();
         let mut ids_to_request = Vec::new();
         let mut names_to_request = Vec::new();
 
-        for id in ids {
-            match self.users.get_login(&id) {
-                Some(Some(login)) => {
-                    users.insert(id, login);
+        if ignore_cache {
+            ids_to_request.clone_from(&ids);
+            names_to_request.clone_from(&names);
+        } else {
+            for id in ids {
+                match self.users.get_login(&id) {
+                    Some(Some(login)) => {
+                        users.insert(id, login);
+                    }
+                    Some(None) => (),
+                    None => ids_to_request.push(id),
                 }
-                Some(None) => (),
-                None => ids_to_request.push(id.into()),
             }
-        }
 
-        for name in names {
-            match self.users.get_id(&name) {
-                Some(Some(id)) => {
-                    users.insert(id, name);
+            for name in names {
+                match self.users.get_id(&name) {
+                    Some(Some(id)) => {
+                        users.insert(id, name);
+                    }
+                    Some(None) => (),
+                    None => names_to_request.push(name),
                 }
-                Some(None) => (),
-                None => names_to_request.push(name.into()),
             }
         }
 
@@ -52,7 +59,7 @@ impl App {
         for chunk in ids_to_request.chunks(100) {
             debug!("Requesting user info for ids {chunk:?}");
 
-            let request = GetUsersRequest::builder().id(chunk.to_vec()).build();
+            let request = GetUsersRequest::ids(chunk);
             let response = self.helix_client.req_get(request, &*self.token).await?;
             new_users.extend(response.data);
         }
@@ -60,14 +67,14 @@ impl App {
         for chunk in names_to_request.chunks(100) {
             debug!("Requesting user info for names {chunk:?}");
 
-            let request = GetUsersRequest::builder().login(chunk.to_vec()).build();
+            let request = GetUsersRequest::logins(chunk);
             let response = self.helix_client.req_get(request, &*self.token).await?;
             new_users.extend(response.data);
         }
 
         for user in new_users {
-            let id = user.id.into_string();
-            let login = user.login.into_string();
+            let id = user.id.to_string();
+            let login = user.login.to_string();
 
             self.users.insert(id.clone(), login.clone());
 
@@ -77,12 +84,12 @@ impl App {
         // Banned users which were not returned by the api
         for id in ids_to_request {
             if !users.contains_key(id.as_str()) {
-                self.users.insert_optional(Some(id.into_string()), None);
+                self.users.insert_optional(Some(id), None);
             }
         }
         for name in names_to_request {
             if !users.values().any(|login| login == name.as_str()) {
-                self.users.insert_optional(None, Some(name.into_string()));
+                self.users.insert_optional(None, Some(name));
             }
         }
 
@@ -94,12 +101,12 @@ impl App {
             Some(Some(id)) => Ok(id),
             Some(None) => Err(Error::NotFound),
             None => {
-                let request = GetUsersRequest::builder().login(vec![name.into()]).build();
+                let request = GetUsersRequest::logins(vec![name]);
                 let response = self.helix_client.req_get(request, &*self.token).await?;
                 match response.data.into_iter().next() {
                     Some(user) => {
-                        let user_id = user.id.into_string();
-                        self.users.insert(user_id.clone(), user.login.into_string());
+                        let user_id = user.id.to_string();
+                        self.users.insert(user_id.clone(), user.login.to_string());
                         Ok(user_id)
                     }
                     None => {

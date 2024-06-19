@@ -6,8 +6,7 @@ use aide::{
     transform::TransformOperation,
 };
 use axum::{
-    extract::State,
-    http::Request,
+    extract::{Request, State},
     middleware::Next,
     response::{IntoResponse, Response},
     Extension, Json,
@@ -19,10 +18,10 @@ use tokio::sync::mpsc::Sender;
 use crate::web::schema::UserHasLogs;
 use crate::db::check_users_exist;
 
-pub async fn admin_auth<B>(
+pub async fn admin_auth(
     app: State<App>,
-    request: Request<B>,
-    next: Next<B>,
+    request: Request,
+    next: Next,
 ) -> Result<Response, impl IntoResponse> {
     if let Some(admin_key) = &app.config.admin_api_key {
         if request
@@ -83,7 +82,7 @@ pub async fn add_channels(
     app: State<App>,
     Json(ChannelsRequest { channels }): Json<ChannelsRequest>,
 ) -> Result<(), Error> {
-    let users = app.get_users(channels, vec![]).await?;
+    let users = app.get_users(channels, vec![], false).await?;
     let names = users.into_values().collect();
 
     bot_tx.send(BotMessage::JoinChannels(names)).await.unwrap();
@@ -96,7 +95,7 @@ pub async fn remove_channels(
     app: State<App>,
     Json(ChannelsRequest { channels }): Json<ChannelsRequest>,
 ) -> Result<(), Error> {
-    let users = app.get_users(channels, vec![]).await?;
+    let users = app.get_users(channels, vec![], false).await?;
     let names = users.into_values().collect();
 
     bot_tx.send(BotMessage::PartChannels(names)).await.unwrap();
