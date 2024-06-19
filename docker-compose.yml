@@ -1,0 +1,9 @@
+services:
+  rustlog:
+    build: .
+    container_name: rustlog
+    ports:
+      - "8025:8025"
+    volumes:
+      - "./config.json:/config.json"
+    restart: unless-stopped
