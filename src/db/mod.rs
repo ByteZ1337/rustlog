@@ -301,7 +301,7 @@ pub async fn search_user_logins(app: &State<App>, param: &UserParam) -> Result<U
         UserParam::UserId(id) => id.to_string(),
         UserParam::User(login) => {
             // try to fetch the user ID from the database
-            let db_result = db.query("SELECT user_id FROM message_structured WHERE user_login = ? LIMIT 1")
+            let db_result = db.query("SELECT user_id FROM message_structured WHERE user_login = ? AND user_id != '' LIMIT 1")
                 .bind(login)
                 .fetch_optional::<String>()
                 .await?;
