@@ -146,6 +146,12 @@ pub struct UserHasLogs {
     pub has_logs: bool,
 }
 
+#[derive(Serialize, JsonSchema)]
+pub struct UserLogins {
+    /// List of user logins
+    pub logins: Vec<String>,
+}
+
 #[derive(Deserialize, JsonSchema)]
 pub struct AvailableLogsParams {
     #[serde(flatten)]

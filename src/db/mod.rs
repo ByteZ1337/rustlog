@@ -1,18 +1,22 @@
 use std::collections::HashMap;
+use axum::extract::State;
+
 use chrono::{Datelike, DateTime, Duration, Utc};
 use clickhouse::{Client, query::RowCursor};
 use rand::{seq::IteratorRandom, thread_rng};
 use tracing::debug;
 
 pub use migrations::run as setup_db;
+use schema::StructuredMessage;
 
 use crate::{
     error::Error,
     logs::{schema::LogRangeParams, stream::LogsStream},
-    web::schema::{UserHasLogs, AvailableLogDate, LogsParams},
     Result,
+    web::schema::{AvailableLogDate, LogsParams, UserHasLogs},
 };
-use schema::StructuredMessage;
+use crate::app::App;
+use crate::web::schema::{UserLogins, UserParam};
 
 mod migrations;
 pub mod schema;
@@ -289,6 +293,36 @@ pub async fn check_users_exist(db: &Client, channel_id: &str, user_ids: &[String
     });
 
     Ok(user_has_logs.into_values().collect())
+}
+
+pub async fn search_user_logins(app: &State<App>, param: &UserParam) -> Result<UserLogins> {
+    let db = &app.db;
+    let id = match param {
+        UserParam::UserId(id) => id.to_string(),
+        UserParam::User(login) => {
+            // try to fetch the user ID from the database
+            let db_result = db.query("SELECT user_id FROM message_structured WHERE user_login = ? LIMIT 1")
+                .bind(login)
+                .fetch_optional::<String>()
+                .await?;
+
+            // user id isnt stored in db, so try fetching it via helix
+            if let Some(user_id) = db_result {
+                user_id
+            } else {
+                app.get_user_id_by_name(login).await?
+            }
+        }
+    };
+
+    if id.is_empty() {
+        return Err(Error::NotFound);
+    }
+
+    let query = db.query("SELECT user_login FROM message_structured WHERE user_id = ? GROUP BY user_login").bind(id);
+
+    let logins = query.fetch_all::<String>().await?;
+    Ok(UserLogins { logins })
 }
 
 pub async fn search_user_logs(

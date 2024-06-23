@@ -72,6 +72,13 @@ pub async fn run(app: App, mut shutdown_rx: ShutdownRx, bot_tx: Sender<BotMessag
                 op.tag("Admin").description("Check if the specified users have logs in the specified channel")
             }),
         )
+        .api_route(
+            "/known-names",
+            get_with(admin::find_user_logins, |mut op| {
+                admin::admin_auth_doc(&mut op);
+                op.tag("Admin").description("Find all logged usernames of a specific user")
+            }),
+        )
         .route_layer(middleware::from_fn_with_state(app.clone(), admin_auth))
         .layer(Extension(bot_tx));
 

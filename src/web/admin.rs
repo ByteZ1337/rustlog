@@ -11,12 +11,13 @@ use axum::{
     response::{IntoResponse, Response},
     Extension, Json,
 };
+use axum::extract::Query;
 use reqwest::StatusCode;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use tokio::sync::mpsc::Sender;
-use crate::web::schema::UserHasLogs;
-use crate::db::check_users_exist;
+use crate::web::schema::{UserHasLogs, UserLogins, UserParam};
+use crate::db::{check_users_exist, search_user_logins};
 
 pub async fn admin_auth(
     app: State<App>,
@@ -77,6 +78,13 @@ pub struct UsersRequest {
     pub users: Vec<String>,
 }
 
+#[derive(Deserialize, JsonSchema)]
+pub struct UserLoginsRequest {
+    /// The user
+    #[serde(flatten)]
+    pub user: UserParam,
+}
+
 pub async fn add_channels(
     Extension(bot_tx): Extension<Sender<BotMessage>>,
     app: State<App>,
@@ -109,4 +117,12 @@ pub async fn check_users_existence(
 ) -> Result<Json<Vec<UserHasLogs>>, Error> {
     let users = check_users_exist(&app.db, &channel, &users).await?;
     Ok(Json(users))
+}
+
+pub async fn find_user_logins(
+    app: State<App>,
+    Query(UserLoginsRequest { user }): Query<UserLoginsRequest>,
+) -> Result<Json<UserLogins>, Error> {
+    let logins = search_user_logins(&app, &user).await?;
+    Ok(Json(logins))
 }
