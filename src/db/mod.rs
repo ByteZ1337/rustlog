@@ -268,7 +268,7 @@ pub async fn check_users_exist(db: &Client, channel_id: &str, user_ids: &[String
     }
 
     let placeholders = user_ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
-    let query = format!("SELECT user_id FROM message WHERE channel_id = ? AND user_id IN ({}) GROUP BY user_id", placeholders);
+    let query = format!("SELECT user_id FROM message_structured WHERE channel_id = ? AND user_id IN ({}) GROUP BY user_id", placeholders);
 
     let mut query_builder = db.query(&query).bind(channel_id);
     for user_id in user_ids {
