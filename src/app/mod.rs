@@ -1,3 +1,14 @@
+pub mod cache;
+
+use self::cache::UsersCache;
+use crate::{
+    config::Config,
+    db::{delete_user_logs, writer::FlushBuffer},
+    error::Error,
+    Result,
+};
+use anyhow::Context;
+use dashmap::DashSet;
 use std::{collections::HashMap, sync::Arc};
 use dashmap::DashSet;
 use crate::{config::Config, error::Error, Result};
@@ -14,6 +25,7 @@ pub struct App {
     pub optout_codes: Arc<DashSet<String>>,
     pub db: Arc<clickhouse::Client>,
     pub config: Arc<Config>,
+    pub flush_buffer: FlushBuffer,
 }
 
 impl App {
