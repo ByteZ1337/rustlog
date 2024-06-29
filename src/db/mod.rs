@@ -12,12 +12,10 @@ use schema::StructuredMessage;
 
 use crate::{
     error::Error,
-    logs::{schema::LogRangeParams, stream::LogsStream},
     logs::{
         schema::LogRangeParams,
         stream::{FlushBufferResponse, LogsStream},
     },
-    web::schema::{AvailableLogDate, LogsParams},
     Result,
     web::schema::{AvailableLogDate, LogsParams, UserHasLogs},
 };
