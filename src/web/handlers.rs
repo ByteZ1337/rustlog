@@ -1,11 +1,18 @@
-use super::{
-    responders::logs::LogsResponse,
-    schema::{
-        AvailableLogs, AvailableLogsParams, Channel, ChannelIdType, ChannelLogsByDatePath,
-        ChannelParam, ChannelsList, LogsParams, LogsPathChannel, SearchParams, UserLogPathParams,
-        UserLogsPath, UserParam,
-    },
+use std::time::Duration;
+
+use aide::axum::IntoApiResponse;
+use axum::{
+    extract::{Path, Query, RawQuery, State},
+    Json,
+    response::{IntoResponse, Redirect, Response},
 };
+use axum::extract::Request;
+use axum::http::{HeaderMap, StatusCode};
+use axum::middleware::Next;
+use axum_extra::{headers::CacheControl, TypedHeader};
+use chrono::{Days, Months, NaiveDate, NaiveTime, Utc};
+use tracing::{debug, info};
+
 use crate::{
     app::App,
     db::{
@@ -14,19 +21,41 @@ use crate::{
     },
     error::Error,
     logs::{schema::LogRangeParams, stream::LogsStream},
-    web::schema::LogsPathDate,
     Result,
+    web::schema::LogsPathDate,
 };
-use aide::axum::IntoApiResponse;
-use axum::{
-    extract::{Path, Query, RawQuery, State},
-    response::{IntoResponse, Redirect, Response},
-    Json,
+
+use super::{
+    responders::logs::LogsResponse,
+    schema::{
+        AvailableLogs, AvailableLogsParams, Channel, ChannelIdType, ChannelLogsByDatePath,
+        ChannelParam, ChannelsList, LogsParams, LogsPathChannel, SearchParams, UserLogPathParams,
+        UserLogsPath, UserParam,
+    },
 };
-use axum_extra::{headers::CacheControl, TypedHeader};
-use chrono::{Days, Months, NaiveDate, NaiveTime, Utc};
-use std::time::Duration;
-use tracing::debug;
+
+// can't have this as a layer because the user logins and ids are passed in a lot of different ways
+pub fn check_logs_auth(
+    app: &State<App>,
+    headers: HeaderMap,
+    user: Option<&str>,
+) -> Result<()> {
+    if matches!(user, Some(user) if user == "gofishgame" || user == "951349582") {
+        return Ok(());
+    }
+
+    if let Some(admin_key) = &app.config.admin_api_key {
+        if headers
+            .get("X-Api-Key")
+            .and_then(|value| value.to_str().ok())
+            == Some(admin_key)
+        {
+            return Ok(());
+        }
+    }
+
+    Err(Error::InvalidAuthKey)
+}
 
 pub async fn get_channels(app: State<App>) -> impl IntoApiResponse {
     let channel_ids = app.config.channels.read().unwrap().clone();
@@ -53,7 +82,10 @@ pub async fn get_channel_logs(
     range_params: Option<Query<LogRangeParams>>,
     RawQuery(query): RawQuery,
     app: State<App>,
+    headers: HeaderMap,
 ) -> Result<Response> {
+    check_logs_auth(&app, headers, None)?;
+
     let channel_id = match channel_id_type {
         ChannelIdType::Name => app.get_user_id_by_name(&channel).await?,
         ChannelIdType::Id => channel.clone(),
@@ -80,8 +112,10 @@ pub async fn get_channel_logs_by_date(
     app: State<App>,
     Path(channel_log_params): Path<ChannelLogsByDatePath>,
     Query(logs_params): Query<LogsParams>,
+    headers: HeaderMap,
 ) -> Result<impl IntoApiResponse> {
     debug!("Params: {logs_params:?}");
+    check_logs_auth(&app, headers, None)?;
 
     let channel_id = match channel_log_params.channel_info.channel_id_type {
         ChannelIdType::Name => {
@@ -138,7 +172,10 @@ pub async fn get_user_logs_by_name(
     range_params: Option<Query<LogRangeParams>>,
     query: RawQuery,
     app: State<App>,
+    headers: HeaderMap,
 ) -> Result<impl IntoApiResponse> {
+    check_logs_auth(&app, headers, Some(&path.user))?;
+
     get_user_logs(path, range_params, query, false, app).await
 }
 
@@ -147,7 +184,10 @@ pub async fn get_user_logs_id(
     range_params: Option<Query<LogRangeParams>>,
     query: RawQuery,
     app: State<App>,
+    headers: HeaderMap,
 ) -> Result<impl IntoApiResponse> {
+    check_logs_auth(&app, headers, Some(&path.user))?;
+
     get_user_logs(path, range_params, query, true, app).await
 }
 
@@ -193,19 +233,24 @@ async fn get_user_logs(
 
 pub async fn get_user_logs_by_date_name(
     app: State<App>,
+    headers: HeaderMap,
     path: Path<UserLogsPath>,
     params: Query<LogsParams>,
 ) -> Result<impl IntoApiResponse> {
-    let user_id = app.get_user_id_by_name(&path.user).await?;
+    check_logs_auth(&app, headers, Some(&path.user))?;
 
+    let user_id = app.get_user_id_by_name(&path.user).await?;
     get_user_logs_by_date(app, path, params, user_id).await
 }
 
 pub async fn get_user_logs_by_date_id(
     app: State<App>,
+    headers: HeaderMap,
     path: Path<UserLogsPath>,
     params: Query<LogsParams>,
 ) -> Result<impl IntoApiResponse> {
+    check_logs_auth(&app, headers, Some(&path.user))?;
+
     let user_id = path.user.clone();
     get_user_logs_by_date(app, path, params, user_id).await
 }
@@ -271,7 +316,10 @@ async fn get_user_logs_inner(
 pub async fn list_available_logs(
     Query(AvailableLogsParams { user, channel }): Query<AvailableLogsParams>,
     app: State<App>,
+    headers: HeaderMap,
 ) -> Result<impl IntoApiResponse> {
+    check_logs_auth(&app, headers, user.as_ref().map(|u| u.as_ref()))?;
+
     let channel_id = match channel {
         ChannelParam::ChannelId(id) => id,
         ChannelParam::Channel(name) => app.get_user_id_by_name(&name).await?,
@@ -299,12 +347,15 @@ pub async fn list_available_logs(
 
 pub async fn random_channel_line(
     app: State<App>,
+    headers: HeaderMap,
     Path(LogsPathChannel {
         channel_id_type,
         channel,
     }): Path<LogsPathChannel>,
     Query(logs_params): Query<LogsParams>,
 ) -> Result<impl IntoApiResponse> {
+    check_logs_auth(&app, headers, None)?;
+
     let channel_id = match channel_id_type {
         ChannelIdType::Name => app.get_user_id_by_name(&channel).await?,
         ChannelIdType::Id => channel,
@@ -322,6 +373,7 @@ pub async fn random_channel_line(
 
 pub async fn random_user_line_by_name(
     app: State<App>,
+    headers: HeaderMap,
     Path(UserLogPathParams {
         channel_id_type,
         channel,
@@ -329,12 +381,15 @@ pub async fn random_user_line_by_name(
     }): Path<UserLogPathParams>,
     query: Query<LogsParams>,
 ) -> Result<impl IntoApiResponse> {
+    check_logs_auth(&app, headers, Some(&user))?;
+
     let user_id = app.get_user_id_by_name(&user).await?;
     random_user_line(app, channel_id_type, channel, user_id, query).await
 }
 
 pub async fn random_user_line_by_id(
     app: State<App>,
+    headers: HeaderMap,
     Path(UserLogPathParams {
         channel_id_type,
         channel,
@@ -342,6 +397,8 @@ pub async fn random_user_line_by_id(
     }): Path<UserLogPathParams>,
     query: Query<LogsParams>,
 ) -> Result<impl IntoApiResponse> {
+    check_logs_auth(&app, headers, Some(&user))?;
+
     random_user_line(app, channel_id_type, channel, user, query).await
 }
 
@@ -375,6 +432,7 @@ pub async fn optout(_app: State<App>) -> Json<String> {
 
 pub async fn search_user_logs_by_name(
     app: State<App>,
+    headers: HeaderMap,
     Path(UserLogPathParams {
         channel_id_type,
         channel,
@@ -382,12 +440,15 @@ pub async fn search_user_logs_by_name(
     }): Path<UserLogPathParams>,
     params: Query<SearchParams>,
 ) -> Result<impl IntoApiResponse> {
+    check_logs_auth(&app, headers, Some(&user))?;
+
     let user_id = app.get_user_id_by_name(&user).await?;
     search_user_logs(app, channel_id_type, channel, user_id, params).await
 }
 
 pub async fn search_user_logs_by_id(
     app: State<App>,
+    headers: HeaderMap,
     Path(UserLogPathParams {
         channel_id_type,
         channel,
@@ -395,6 +456,8 @@ pub async fn search_user_logs_by_id(
     }): Path<UserLogPathParams>,
     params: Query<SearchParams>,
 ) -> Result<impl IntoApiResponse> {
+    check_logs_auth(&app, headers, Some(&user))?;
+
     search_user_logs(app, channel_id_type, channel, user, params).await
 }
 
@@ -418,8 +481,7 @@ async fn search_user_logs(
         &user_id,
         &params.q,
         params.logs_params,
-    )
-    .await?;
+    ).await?;
 
     let logs = LogsResponse {
         stream,

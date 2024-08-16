@@ -1,38 +1,41 @@
+use std::{
+    net::{AddrParseError, SocketAddr},
+    str::FromStr,
+    sync::Arc,
+};
+
+use aide::{
+    axum::{
+        ApiRouter,
+        IntoApiResponse, routing::{get, get_with, post, post_with},
+    },
+    openapi::OpenApi,
+};
+use axum::{
+    Extension,
+    extract::Request,
+    Json,
+    middleware::{self, Next}, response::{IntoResponse, Response}, ServiceExt,
+};
+use axum_prometheus::PrometheusMetricLayerBuilder;
+use prometheus::TextEncoder;
+use tokio::{net::TcpListener, sync::mpsc::Sender};
+use tower_http::{
+    compression::CompressionLayer, CompressionLevel, cors::CorsLayer,
+    normalize_path::NormalizePath, trace::TraceLayer,
+};
+use tracing::{debug, info};
+
+use crate::{app::App, bot::BotMessage, ShutdownRx, web::admin::admin_auth};
+
+use self::handlers::no_cache_header;
+
 mod admin;
 mod frontend;
 mod handlers;
 mod responders;
 pub mod schema;
 mod trace_layer;
-
-use self::handlers::no_cache_header;
-use crate::{app::App, bot::BotMessage, web::admin::admin_auth, ShutdownRx};
-use aide::{
-    axum::{
-        routing::{get, get_with, post, post_with},
-        ApiRouter, IntoApiResponse,
-    },
-    openapi::OpenApi,
-};
-use axum::{
-    extract::Request,
-    middleware::{self, Next},
-    response::{IntoResponse, Response},
-    Extension, Json, ServiceExt,
-};
-use axum_prometheus::PrometheusMetricLayerBuilder;
-use prometheus::TextEncoder;
-use std::{
-    net::{AddrParseError, SocketAddr},
-    str::FromStr,
-    sync::Arc,
-};
-use tokio::{net::TcpListener, sync::mpsc::Sender};
-use tower_http::{
-    compression::CompressionLayer, cors::CorsLayer, normalize_path::NormalizePath,
-    trace::TraceLayer, CompressionLevel,
-};
-use tracing::{debug, info};
 
 const CAPABILITIES: &[&str] = &["arbitrary-range-query"];
 

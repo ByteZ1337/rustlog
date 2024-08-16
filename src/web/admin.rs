@@ -1,4 +1,3 @@
-use crate::{app::App, bot::BotMessage, error::Error};
 use aide::{
     openapi::{
         HeaderStyle, Parameter, ParameterData, ParameterSchemaOrContent, ReferenceOr, SchemaObject,
@@ -6,18 +5,21 @@ use aide::{
     transform::TransformOperation,
 };
 use axum::{
+    Extension,
     extract::{Request, State},
-    middleware::Next,
-    response::{IntoResponse, Response},
-    Extension, Json,
+    Json,
+    middleware::Next, response::{IntoResponse, Response},
 };
 use axum::extract::Query;
 use reqwest::StatusCode;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use tokio::sync::mpsc::Sender;
-use crate::web::schema::{UserHasLogs, UserLogins, UserParam};
+use tracing::info;
+
+use crate::{app::App, bot::BotMessage, error::Error};
 use crate::db::{check_users_exist, search_user_logins};
+use crate::web::schema::{UserHasLogs, UserLogins, UserParam};
 
 pub async fn admin_auth(
     app: State<App>,

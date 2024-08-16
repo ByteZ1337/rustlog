@@ -167,6 +167,15 @@ pub enum UserParam {
     UserId(String),
 }
 
+impl AsRef<str> for UserParam {
+    fn as_ref(&self) -> &str {
+        match self {
+            UserParam::User(user) => user,
+            UserParam::UserId(user_id) => user_id,
+        }
+    }
+}
+
 #[derive(Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ChannelParam {

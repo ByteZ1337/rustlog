@@ -24,6 +24,8 @@ pub enum Error {
     ChannelOptedOut,
     #[error("The requested user has opted out of being logged")]
     UserOptedOut,
+    #[error("Invalid auth key")]
+    InvalidAuthKey,
     #[error("Not found")]
     NotFound,
 }
@@ -37,11 +39,19 @@ impl IntoResponse for Error {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
             Error::ParseInt(_) | Error::InvalidParam(_) => StatusCode::BAD_REQUEST,
-            Error::ChannelOptedOut | Error::UserOptedOut => StatusCode::FORBIDDEN,
+            Error::ChannelOptedOut | Error::UserOptedOut | Error::InvalidAuthKey => StatusCode::FORBIDDEN,
             Error::NotFound => StatusCode::NOT_FOUND,
         };
 
-        (status_code, self.to_string()).into_response()
+        let mut response = (status_code, self.to_string()).into_response();
+        if matches!(&self, Error::ChannelOptedOut | Error::UserOptedOut) {
+            response.headers_mut().insert(
+                "X-Opt-Out",
+                "true".parse().expect("Failed to parse header value"),
+            );
+        }
+
+        response
     }
 }
 
