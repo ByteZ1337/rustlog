@@ -339,10 +339,10 @@ pub async fn search_user_logins(app: &State<App>, param: &UserParam) -> Result<U
         return Err(Error::NotFound);
     }
 
-    let query = db.query("SELECT user_login FROM message_structured WHERE user_id = ? GROUP BY user_login").bind(id);
+    let query = db.query("SELECT user_login FROM message_structured WHERE user_id = ? GROUP BY user_login").bind(id.clone());
 
     let logins = query.fetch_all::<String>().await?;
-    Ok(UserLogins { logins })
+    Ok(UserLogins { id, logins })
 }
 
 pub async fn search_user_logs(
