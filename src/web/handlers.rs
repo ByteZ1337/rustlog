@@ -57,7 +57,11 @@ pub fn check_logs_auth(
     Err(Error::InvalidAuthKey)
 }
 
-pub async fn get_channels(app: State<App>) -> impl IntoApiResponse {
+pub async fn get_channels(
+    app: State<App>,
+    headers: HeaderMap,
+) -> Result<Response> {
+    check_logs_auth(&app, headers, None)?;
     let channel_ids = app.config.channels.read().unwrap().clone();
 
     let channels = app
@@ -71,7 +75,7 @@ pub async fn get_channels(app: State<App>) -> impl IntoApiResponse {
             .map(|(user_id, name)| Channel { name, user_id })
             .collect(),
     });
-    (cache_header(600), json)
+    Ok((cache_header(600), json).into_response())
 }
 
 pub async fn get_channel_logs(
