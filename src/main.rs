@@ -17,7 +17,7 @@ use args::{Args, Command};
 use clap::Parser;
 use config::Config;
 use db::{setup_db, writer::create_writer};
-use futures::{future::try_join_all, stream::FuturesUnordered, StreamExt};
+use futures::future::try_join_all;
 use migrator::Migrator;
 use mimalloc::MiMalloc;
 use std::{
@@ -26,7 +26,6 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::{
-    signal::unix::{signal, SignalKind},
     sync::{mpsc, watch},
     time::timeout,
 };
@@ -178,7 +177,11 @@ async fn generate_token(config: &Config) -> anyhow::Result<AppAccessToken> {
     Ok(token)
 }
 
+#[cfg(unix)]
 async fn listen_shutdown() -> watch::Receiver<()> {
+    use tokio::signal::unix::{signal, SignalKind};
+    use futures::{stream::FuturesUnordered, StreamExt};
+
     let shutdown_signals = [SignalKind::interrupt(), SignalKind::terminate()];
     let mut futures = FuturesUnordered::new();
 
@@ -195,6 +198,30 @@ async fn listen_shutdown() -> watch::Receiver<()> {
     tokio::spawn(async move {
         futures.next().await;
         info!("Received shutdown signal");
+        tx.send(()).unwrap();
+    });
+
+    rx
+}
+
+#[cfg(windows)]
+async fn listen_shutdown() -> watch::Receiver<()> {
+    use tokio::signal::windows::{ctrl_c, ctrl_break, ctrl_close, ctrl_shutdown};
+
+    let (tx, rx) = watch::channel(());
+
+    let mut ctrl_c = ctrl_c().unwrap();
+    let mut ctrl_break = ctrl_break().unwrap();
+    let mut ctrl_close = ctrl_close().unwrap();
+    let mut ctrl_shutdown = ctrl_shutdown().unwrap();
+
+    tokio::spawn(async move {
+        tokio::select! {
+            _ = ctrl_c.recv() => info!("Received CTRL_C_EVENT"),
+            _ = ctrl_break.recv() => info!("Received CTRL_BREAK_EVENT"),
+            _ = ctrl_close.recv() => info!("Received CTRL_CLOSE_EVENT"),
+            _ = ctrl_shutdown.recv() => info!("Received CTRL_SHUTDOWN_EVENT"),
+        }
         tx.send(()).unwrap();
     });
 
