@@ -4,11 +4,18 @@ use aide::axum::IntoApiResponse;
 use axum::{
     extract::{Path, Query, RawQuery, State},
     Json,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Redirect, Response},
+    middleware::Next,
 };
-use axum::extract::Request;
-use axum::http::{HeaderMap, StatusCode};
-use axum::middleware::Next;
+use super::{
+    responders::logs::LogsResponse,
+    schema::{
+        AvailableLogs, AvailableLogsParams, Channel, ChannelIdType, ChannelLogsByDatePath,
+        ChannelLogsStats, ChannelParam, ChannelsList, LogsParams, LogsPathChannel, SearchParams,
+        UserLogPathParams, UserLogsPath, UserLogsStats, UserParam,
+    },
+};
 use axum_extra::{headers::CacheControl, TypedHeader};
 use chrono::{Days, Months, NaiveDate, NaiveTime, Utc};
 use tracing::{debug, info};
@@ -23,15 +30,6 @@ use crate::{
     logs::{schema::LogRangeParams, stream::LogsStream},
     Result,
     web::schema::LogsPathDate,
-};
-
-use super::{
-    responders::logs::LogsResponse,
-    schema::{
-        AvailableLogs, AvailableLogsParams, Channel, ChannelIdType, ChannelLogsByDatePath,
-        ChannelParam, ChannelsList, LogsParams, LogsPathChannel, SearchParams, UserLogPathParams,
-        UserLogsPath, UserParam,
-    },
 };
 
 // can't have this as a layer because the user logins and ids are passed in a lot of different ways
@@ -83,7 +81,8 @@ pub async fn get_channel_logs(
         channel_id_type,
         channel,
     }): Path<LogsPathChannel>,
-    range_params: Option<Query<LogRangeParams>>,
+    Query(range_params): Query<LogRangeParams>,
+    Query(logs_params): Query<LogsParams>,
     RawQuery(query): RawQuery,
     app: State<App>,
     headers: HeaderMap,
@@ -95,8 +94,8 @@ pub async fn get_channel_logs(
         ChannelIdType::Id => channel.clone(),
     };
 
-    if let Some(Query(params)) = range_params {
-        let logs = get_channel_logs_inner(&app, &channel_id, params).await?;
+    if let Some(range) = range_params.range() {
+        let logs = get_channel_logs_inner(&app, &channel_id, logs_params, range).await?;
         Ok(logs.into_response())
     } else {
         let available_logs = read_available_channel_logs(&app.db, &channel_id).await?;
@@ -110,6 +109,64 @@ pub async fn get_channel_logs(
 
         Ok(Redirect::to(&new_uri).into_response())
     }
+}
+
+pub async fn get_channel_stats(
+    Path(LogsPathChannel {
+        channel_id_type,
+        channel,
+    }): Path<LogsPathChannel>,
+    Query(range_params): Query<LogRangeParams>,
+    app: State<App>,
+) -> Result<Json<ChannelLogsStats>> {
+    let channel_id = match channel_id_type {
+        ChannelIdType::Name => app.get_user_id_by_name(&channel).await?,
+        ChannelIdType::Id => channel.clone(),
+    };
+    let stats = db::get_channel_stats(&app.db, &channel_id, range_params).await?;
+
+    Ok(Json(stats))
+}
+
+pub async fn get_user_stats_by_name(
+    path: Path<UserLogPathParams>,
+    range_params: Query<LogRangeParams>,
+    app: State<App>,
+) -> Result<Json<UserLogsStats>> {
+    get_user_stats(path, false, range_params, app).await
+}
+
+pub async fn get_user_stats_by_id(
+    path: Path<UserLogPathParams>,
+    range_params: Query<LogRangeParams>,
+    app: State<App>,
+) -> Result<Json<UserLogsStats>> {
+    get_user_stats(path, true, range_params, app).await
+}
+
+async fn get_user_stats(
+    Path(UserLogPathParams {
+        channel_id_type,
+        channel,
+        user,
+    }): Path<UserLogPathParams>,
+    user_is_id: bool,
+    Query(range_params): Query<LogRangeParams>,
+    app: State<App>,
+) -> Result<Json<UserLogsStats>> {
+    let channel_id = match channel_id_type {
+        ChannelIdType::Name => app.get_user_id_by_name(&channel).await?,
+        ChannelIdType::Id => channel.clone(),
+    };
+    let user_id = if user_is_id {
+        user.clone()
+    } else {
+        app.get_user_id_by_name(&user).await?
+    };
+
+    let stats = db::get_user_stats(&app.db, &channel_id, &user_id, range_params).await?;
+
+    Ok(Json(stats))
 }
 
 pub async fn get_channel_logs_by_date(
@@ -139,30 +196,25 @@ pub async fn get_channel_logs_by_date(
         .checked_add_days(Days::new(1))
         .ok_or_else(|| Error::InvalidParam("Date out of range".to_owned()))?;
 
-    let params = LogRangeParams {
-        from,
-        to,
-        logs_params,
-    };
-
-    get_channel_logs_inner(&app, &channel_id, params).await
+    get_channel_logs_inner(&app, &channel_id, logs_params, (from, to)).await
 }
 
 async fn get_channel_logs_inner(
     app: &App,
     channel_id: &str,
-    channel_log_params: LogRangeParams,
+    params: LogsParams,
+    range: (DateTime<Utc>, DateTime<Utc>),
 ) -> Result<impl IntoApiResponse> {
     app.check_opted_out(channel_id, None)?;
 
-    let stream = read_channel(&app.db, channel_id, channel_log_params, &app.flush_buffer).await?;
+    let stream = read_channel(&app.db, channel_id, params, &app.flush_buffer, range).await?;
 
     let logs = LogsResponse {
-        response_type: channel_log_params.logs_params.response_type(),
+        response_type: params.response_type(),
         stream,
     };
 
-    let cache = if Utc::now() < channel_log_params.to {
+    let cache = if Utc::now() < range.1 {
         no_cache_header()
     } else {
         cache_header(36000)
@@ -173,26 +225,26 @@ async fn get_channel_logs_inner(
 
 pub async fn get_user_logs_by_name(
     path: Path<UserLogPathParams>,
-    range_params: Option<Query<LogRangeParams>>,
+    Query(range_params): Query<LogRangeParams>,
+    Query(logs_params): Query<LogsParams>,
     query: RawQuery,
     app: State<App>,
     headers: HeaderMap,
 ) -> Result<impl IntoApiResponse> {
     check_logs_auth(&app, headers, Some(&path.user))?;
-
-    get_user_logs(path, range_params, query, false, app).await
+    get_user_logs(path, range_params, logs_params, query, false, app).await
 }
 
 pub async fn get_user_logs_id(
     path: Path<UserLogPathParams>,
-    range_params: Option<Query<LogRangeParams>>,
+    Query(range_params): Query<LogRangeParams>,
+    Query(logs_params): Query<LogsParams>,
     query: RawQuery,
     app: State<App>,
     headers: HeaderMap,
 ) -> Result<impl IntoApiResponse> {
     check_logs_auth(&app, headers, Some(&path.user))?;
-
-    get_user_logs(path, range_params, query, true, app).await
+    get_user_logs(path, range_params, logs_params, query, true, app).await
 }
 
 async fn get_user_logs(
@@ -201,7 +253,8 @@ async fn get_user_logs(
         channel,
         user,
     }): Path<UserLogPathParams>,
-    range_params: Option<Query<LogRangeParams>>,
+    range_params: LogRangeParams,
+    logs_params: LogsParams,
     RawQuery(query): RawQuery,
     user_is_id: bool,
     app: State<App>,
@@ -216,8 +269,10 @@ async fn get_user_logs(
         app.get_user_id_by_name(&user).await?
     };
 
-    if let Some(Query(params)) = range_params {
-        let logs = get_user_logs_inner(&app, &channel_id, &user_id, params).await?;
+    app.check_opted_out(&channel_id, Some(&user_id))?;
+
+    if let Some(range) = range_params.range() {
+        let logs = get_user_logs_inner(&app, &channel_id, &user_id, logs_params, range).await?;
         Ok(logs.into_response())
     } else {
         let available_logs = read_available_user_logs(&app.db, &channel_id, &user_id).await?;
@@ -273,6 +328,8 @@ async fn get_user_logs_by_date(
         ChannelIdType::Id => user_logs_path.channel_info.channel.clone(),
     };
 
+    app.check_opted_out(&channel_id, Some(&user_id))?;
+
     let year = user_logs_path.year.parse()?;
     let month = user_logs_path.month.parse()?;
 
@@ -284,31 +341,32 @@ async fn get_user_logs_by_date(
         .checked_add_months(Months::new(1))
         .ok_or_else(|| Error::InvalidParam("Date out of range".to_owned()))?;
 
-    let params = LogRangeParams {
-        from,
-        to,
-        logs_params,
-    };
-
-    get_user_logs_inner(&app, &channel_id, &user_id, params).await
+    get_user_logs_inner(&app, &channel_id, &user_id, logs_params, (from, to)).await
 }
 
 async fn get_user_logs_inner(
     app: &App,
     channel_id: &str,
     user_id: &str,
-    log_params: LogRangeParams,
+    logs_params: LogsParams,
+    range: (DateTime<Utc>, DateTime<Utc>),
 ) -> Result<impl IntoApiResponse> {
-    app.check_opted_out(channel_id, Some(user_id))?;
-
-    let stream = read_user(&app.db, channel_id, user_id, log_params, &app.flush_buffer).await?;
+    let stream = read_user(
+        &app.db,
+        channel_id,
+        user_id,
+        logs_params,
+        &app.flush_buffer,
+        range,
+    )
+    .await?;
 
     let logs = LogsResponse {
         stream,
-        response_type: log_params.logs_params.response_type(),
+        response_type: logs_params.response_type(),
     };
 
-    let cache = if Utc::now() < log_params.to {
+    let cache = if Utc::now() < range.1 {
         no_cache_header()
     } else {
         cache_header(36000)
