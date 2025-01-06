@@ -1,28 +1,29 @@
+use axum::extract::State;
 use clickhouse::Row;
 use std::collections::HashMap;
-use axum::extract::State;
 
-use chrono::{Datelike, DateTime, Duration, Utc};
-use clickhouse::{Client, query::RowCursor};
+use chrono::{DateTime, Datelike, Duration, Utc};
+use clickhouse::{query::RowCursor, Client};
 use rand::{seq::IteratorRandom, thread_rng};
 use tracing::debug;
 
 pub use migrations::run as setup_db;
+use schema::StructuredMessage;
 use serde::Deserialize;
 use writer::FlushBuffer;
-use schema::StructuredMessage;
 
+use crate::app::App;
+use crate::db::schema::Stream;
+use crate::web::schema::{Streams, UserLogins, UserParam};
 use crate::{
     error::Error,
     logs::{
         schema::LogRangeParams,
         stream::{FlushBufferResponse, LogsStream},
     },
-    web::schema::{AvailableLogDate, ChannelLogsStats, LogsParams, UserLogsStats, UserHasLogs},
+    web::schema::{AvailableLogDate, ChannelLogsStats, LogsParams, UserHasLogs, UserLogsStats},
     Result,
 };
-use crate::app::App;
-use crate::web::schema::{UserLogins, UserParam};
 
 mod migrations;
 pub mod schema;
@@ -267,7 +268,11 @@ pub async fn read_random_channel_line(
     Ok(msg)
 }
 
-pub async fn check_users_exist(db: &Client, channel_id: &str, user_ids: &[String]) -> Result<Vec<UserHasLogs>> {
+pub async fn check_users_exist(
+    db: &Client,
+    channel_id: &str,
+    user_ids: &[String],
+) -> Result<Vec<UserHasLogs>> {
     if user_ids.is_empty() {
         return Ok(Vec::new());
     }
@@ -282,16 +287,26 @@ pub async fn check_users_exist(db: &Client, channel_id: &str, user_ids: &[String
 
     let mut user_has_logs = user_ids
         .iter()
-        .map(|id| (id.clone(), UserHasLogs {
-            user: id.clone(),
-            has_logs: false,
-        })).collect::<HashMap<String, UserHasLogs>>();
+        .map(|id| {
+            (
+                id.clone(),
+                UserHasLogs {
+                    user: id.clone(),
+                    has_logs: false,
+                },
+            )
+        })
+        .collect::<HashMap<String, UserHasLogs>>();
 
-    query_builder.fetch_all::<String>().await?.into_iter().for_each(|user_id| {
-        if let Some(user) = user_has_logs.get_mut(&user_id) {
-            user.has_logs = true;
-        }
-    });
+    query_builder
+        .fetch_all::<String>()
+        .await?
+        .into_iter()
+        .for_each(|user_id| {
+            if let Some(user) = user_has_logs.get_mut(&user_id) {
+                user.has_logs = true;
+            }
+        });
 
     Ok(user_has_logs.into_values().collect())
 }
@@ -320,10 +335,29 @@ pub async fn search_user_logins(app: &State<App>, param: &UserParam) -> Result<U
         return Err(Error::NotFound);
     }
 
-    let query = db.query("SELECT user_login FROM message_structured WHERE user_id = ? GROUP BY user_login").bind(id.clone());
+    let query = db
+        .query("SELECT user_login FROM message_structured WHERE user_id = ? GROUP BY user_login")
+        .bind(id.clone());
 
     let logins = query.fetch_all::<String>().await?;
     Ok(UserLogins { id, logins })
+}
+
+pub async fn search_streams(
+    db: &Client,
+    channel_id: &str
+) -> Result<Streams> {
+    let ninety_days_ago = (Utc::now() - Duration::days(90)).timestamp();
+    let streams: Vec<Stream> = db
+        .query("SELECT * FROM stream WHERE channel_id = ? AND started_at >= ? ORDER BY started_at DESC LIMIT 200")
+        .bind(channel_id)
+        .bind(ninety_days_ago)
+        .fetch_all().await?;
+
+    Ok(Streams {
+        channel_id: channel_id.to_string(),
+        streams: streams.into_iter().map(|s| s.into()).collect(),
+    })
 }
 
 pub async fn search_user_logs(

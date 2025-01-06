@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
-
+use crate::db::schema::Stream;
 use super::responders::logs::{JsonResponseType, LogsResponseType};
 
 #[derive(Serialize, JsonSchema)]
@@ -152,6 +152,31 @@ pub struct UserLogins {
     pub id: String,
     /// List of user logins
     pub logins: Vec<String>,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct AssignedStream {
+    /// Stream ID
+    pub id: String,
+    /// Start time unix epoch
+    pub started_at: u32,
+}
+
+impl From<Stream> for AssignedStream {
+    fn from(stream: Stream) -> Self {
+        Self {
+            id: stream.stream_id,
+            started_at: stream.started_at,
+        }
+    }
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct Streams {
+    /// Channel ID
+    pub channel_id: String,
+    /// List of known streams
+    pub streams: Vec<AssignedStream>,
 }
 
 #[derive(Deserialize, JsonSchema)]

@@ -7,6 +7,7 @@ mod error;
 mod logs;
 mod migrator;
 mod web;
+mod streams;
 
 pub type Result<T> = std::result::Result<T, error::Error>;
 pub type ShutdownRx = watch::Receiver<()>;
@@ -93,7 +94,7 @@ async fn run(config: Config, db: clickhouse::Client) -> anyhow::Result<()> {
     let helix_client: HelixClient<reqwest::Client> = HelixClient::default();
     let token = generate_token(&config).await?;
 
-    let (writer_tx, flush_buffer, mut writer_handle) = create_writer(
+    let (writer_tx, stream_writer_tx, flush_buffer, mut writer_handle) = create_writer(
         db.clone(),
         shutdown_rx.clone(),
         config.clickhouse_flush_interval,
@@ -120,6 +121,7 @@ async fn run(config: Config, db: clickhouse::Client) -> anyhow::Result<()> {
         shutdown_rx.clone(),
         bot_rx,
     ));
+    let mut streams_handle = tokio::spawn(streams::run(app.clone(), stream_writer_tx, shutdown_rx.clone(), app.config.streams_request_interval));
     let mut web_handle = tokio::spawn(web::run(app, shutdown_rx.clone(), bot_tx));
 
     tokio::select! {
@@ -128,7 +130,7 @@ async fn run(config: Config, db: clickhouse::Client) -> anyhow::Result<()> {
 
             let started_at = Instant::now();
 
-            let shutdown_future = try_join_all([bot_handle, web_handle, writer_handle]);
+            let shutdown_future = try_join_all([bot_handle, streams_handle, web_handle, writer_handle]);
             match timeout(Duration::from_secs(SHUTDOWN_TIMEOUT_SECONDS), shutdown_future).await {
                 Ok(Ok(_)) => {
                     debug!("Cleanup finished in {}ms", started_at.elapsed().as_millis());
@@ -143,6 +145,9 @@ async fn run(config: Config, db: clickhouse::Client) -> anyhow::Result<()> {
         }
         _ = &mut bot_handle => {
             Err(anyhow!("Bot task exited unexpectedly"))
+        }
+        _ = &mut streams_handle => {
+            Err(anyhow!("Streams task exited unexpectedly"))
         }
         _ = &mut web_handle => {
             Err(anyhow!("Web task exited unexpectedly"))
@@ -179,8 +184,8 @@ async fn generate_token(config: &Config) -> anyhow::Result<AppAccessToken> {
 
 #[cfg(unix)]
 async fn listen_shutdown() -> watch::Receiver<()> {
-    use tokio::signal::unix::{signal, SignalKind};
     use futures::{stream::FuturesUnordered, StreamExt};
+    use tokio::signal::unix::{signal, SignalKind};
 
     let shutdown_signals = [SignalKind::interrupt(), SignalKind::terminate()];
     let mut futures = FuturesUnordered::new();
@@ -206,7 +211,7 @@ async fn listen_shutdown() -> watch::Receiver<()> {
 
 #[cfg(windows)]
 async fn listen_shutdown() -> watch::Receiver<()> {
-    use tokio::signal::windows::{ctrl_c, ctrl_break, ctrl_close, ctrl_shutdown};
+    use tokio::signal::windows::{ctrl_break, ctrl_c, ctrl_close, ctrl_shutdown};
 
     let (tx, rx) = watch::channel(());
 

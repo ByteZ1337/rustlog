@@ -16,6 +16,8 @@ pub struct Config {
     pub clickhouse_password: Option<String>,
     #[serde(default = "clickhouse_flush_interval")]
     pub clickhouse_flush_interval: u64,
+    #[serde(default = "stream_request_interval")]
+    pub streams_request_interval: u64,
     #[serde(default = "default_listen_address")]
     pub listen_address: String,
     pub channels: RwLock<HashSet<String>>,
@@ -51,4 +53,8 @@ fn default_listen_address() -> String {
 
 fn clickhouse_flush_interval() -> u64 {
     10
+}
+
+fn stream_request_interval() -> u64 {
+    300
 }

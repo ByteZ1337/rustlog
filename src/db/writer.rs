@@ -1,4 +1,4 @@
-use super::schema::StructuredMessage;
+use super::schema::{Stream, StructuredMessage, STREAMS_TABLE};
 use crate::{db::schema::MESSAGES_STRUCTURED_TABLE, ShutdownRx};
 use anyhow::{anyhow, Context};
 use clickhouse::Client;
@@ -14,6 +14,7 @@ use tokio::{
     time::{sleep, Instant},
 };
 use tracing::{debug, error, info, trace};
+use tracing::field::debug;
 
 const RETRY_COUNT: usize = 20;
 const RETRY_INTERVAL_SECONDS: u64 = 5;
@@ -29,6 +30,7 @@ lazy_static! {
 #[derive(Default, Clone)]
 pub struct FlushBuffer {
     messages: Arc<RwLock<Vec<StructuredMessage<'static>>>>,
+    streams: Arc<RwLock<Vec<Stream>>>
 }
 
 impl FlushBuffer {
@@ -76,10 +78,12 @@ pub async fn create_writer(
     flush_interval: u64,
 ) -> anyhow::Result<(
     Sender<StructuredMessage<'static>>,
+    Sender<Vec<Stream>>,
     FlushBuffer,
     JoinHandle<()>,
 )> {
     let (tx, mut rx) = channel(1000);
+    let (stream_tx, mut stream_rx) = channel::<Vec<Stream>>(1000);
 
     let flush_buffer = FlushBuffer::default();
     let flush_buffer_clone = flush_buffer.clone();
@@ -99,6 +103,10 @@ pub async fn create_writer(
                 Some(msg) = rx.recv() => {
                     flush_buffer.messages.write().await.push(msg);
                 }
+                Some(streams) = stream_rx.recv() => {
+                    debug!("Received {} streams to write", streams.len());
+                    flush_buffer.streams.write().await.extend(streams);
+                }
                 Ok(()) = shutdown_rx.changed() => {
                     info!("Flushing database write buffer");
 
@@ -112,7 +120,7 @@ pub async fn create_writer(
         }
     });
 
-    Ok((tx, flush_buffer_clone, handle))
+    Ok((tx, stream_tx, flush_buffer_clone, handle))
 }
 
 async fn write_chunk_with_retry(db: &Client, buffer: &FlushBuffer) -> anyhow::Result<()> {
@@ -138,7 +146,7 @@ async fn write_chunk_with_retry(db: &Client, buffer: &FlushBuffer) -> anyhow::Re
 async fn write_chunk(db: &Client, buffer: &FlushBuffer) -> anyhow::Result<()> {
     let messages_read_guard = buffer.messages.read().await;
 
-    let started_at = Instant::now();
+    let mut started_at = Instant::now();
 
     let mut insert = db.insert(MESSAGES_STRUCTURED_TABLE)?;
     for message in messages_read_guard.iter() {
@@ -156,6 +164,28 @@ async fn write_chunk(db: &Client, buffer: &FlushBuffer) -> anyhow::Result<()> {
     );
     BATCH_MSG_COUNT_GAGUE.set(messages_write_guard.len().try_into().unwrap());
     messages_write_guard.clear();
-
+    drop(messages_write_guard);
+    
+    // Streams
+    
+    let streams_read_guard = buffer.streams.read().await;
+    started_at = Instant::now();
+    
+    let mut insert = db.insert(STREAMS_TABLE)?;
+    for stream in streams_read_guard.iter() {
+        insert.write(stream).await.context("Could not write row")?;
+    }
+    drop(streams_read_guard);
+    
+    let mut streams_write_guard = buffer.streams.write().await;
+    insert.end().await.context("Could not end insert")?;
+    
+    debug!(
+        "{} streams have been inserted (took {}ms)",
+        streams_write_guard.len(),
+        started_at.elapsed().as_millis()
+    );
+    streams_write_guard.clear();
+    
     Ok(())
 }

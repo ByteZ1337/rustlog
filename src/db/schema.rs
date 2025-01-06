@@ -7,9 +7,12 @@ use std::fmt::Write;
 use std::{borrow::Cow, fmt::Debug};
 use strum::{Display, EnumString};
 use tmi::{IrcMessageRef, Tag};
+use twitch_api::helix;
+use twitch_api::helix::streams::GetStreamsRequest;
 use uuid::Uuid;
 
 pub const MESSAGES_STRUCTURED_TABLE: &str = "message_structured";
+pub const STREAMS_TABLE: &str = "stream";
 
 bitflags! {
     #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Default, Clone, Copy)]
@@ -543,6 +546,27 @@ fn extract_message_text(mut message_text: &str) -> &str {
     message_text
 }
 
+#[derive(Row, Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub struct Stream {
+    pub channel_id: String,
+    pub channel_login: String,
+    pub stream_id: String,
+    pub started_at: u32,
+}
+
+impl TryFrom<helix::streams::Stream> for Stream {
+    type Error = <u32 as TryFrom<i64>>::Error;
+
+    fn try_from(value: helix::streams::Stream) -> Result<Self, Self::Error> {
+        let started_at = value.started_at.to_utc().unix_timestamp();
+        Ok(Self {
+            channel_id: value.user_id.take(),
+            channel_login: value.user_login.take(),
+            stream_id: value.id.take(),
+            started_at: started_at.try_into()?,
+        })
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::{MessageType, StructuredMessage, UnstructuredMessage};

@@ -54,6 +54,7 @@ twitch_api = { git = "https://github.com/twitch-rs/twitch_api", features = [
     "reqwest",
     "twitch_oauth2",
 ] }
+twitch_types = { git = "https://github.com/twitch-rs/twitch_api/", features = ["time"] }
 tmi = { version = "0.7.0", default-features = false, features = ["simd"] }
 axum-prometheus = "0.7.0"
 metrics-prometheus = "0.7.0"

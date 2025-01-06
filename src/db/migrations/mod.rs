@@ -71,6 +71,22 @@ String CODEC(ZSTD(10))
 
     run_migration(db, "6_structured_message", StructuredMigration { db_name }).await?;
 
+    run_migration(
+        db,
+        "6.5_create_stream",
+        "
+CREATE TABLE stream
+(
+    channel_id String CODEC(ZSTD(8)),
+    channel_login String CODEC(ZSTD(8)),
+    stream_id String CODEC(ZSTD(8)),
+    started_at UInt32 CODEC(Delta, ZSTD(3))
+)
+ENGINE = ReplacingMergeTree
+ORDER BY (channel_id, started_at)",
+    )
+    .await?;
+
     Ok(())
 }
 

@@ -4,22 +4,22 @@ use aide::{
     },
     transform::TransformOperation,
 };
-use axum::{
-    Extension,
-    extract::{Request, State},
-    Json,
-    middleware::Next, response::{IntoResponse, Response},
-};
 use axum::extract::Query;
+use axum::{
+    extract::{Request, State},
+    middleware::Next,
+    response::{IntoResponse, Response},
+    Extension, Json,
+};
 use reqwest::StatusCode;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use tokio::sync::mpsc::Sender;
 use tracing::info;
 
+use crate::db::{check_users_exist, search_streams, search_user_logins};
+use crate::web::schema::{Streams, UserHasLogs, UserLogins, UserParam};
 use crate::{app::App, bot::BotMessage, error::Error};
-use crate::db::{check_users_exist, search_user_logins};
-use crate::web::schema::{UserHasLogs, UserLogins, UserParam};
 
 pub async fn admin_auth(
     app: State<App>,
@@ -87,6 +87,12 @@ pub struct UserLoginsRequest {
     pub user: UserParam,
 }
 
+#[derive(Deserialize, JsonSchema)]
+pub struct StreamsRequest {
+    /// The channel id
+    pub channel_id: String
+}
+
 pub async fn add_channels(
     Extension(bot_tx): Extension<Sender<BotMessage>>,
     app: State<App>,
@@ -127,4 +133,12 @@ pub async fn find_user_logins(
 ) -> Result<Json<UserLogins>, Error> {
     let logins = search_user_logins(&app, &user).await?;
     Ok(Json(logins))
+}
+
+pub async fn find_streams(
+    app: State<App>,
+    Query(StreamsRequest { channel_id }): Query<StreamsRequest>,
+) -> Result<Json<Streams>, Error> {
+    let streams = search_streams(&app.db, &channel_id).await?;
+    Ok(Json(streams))
 }
