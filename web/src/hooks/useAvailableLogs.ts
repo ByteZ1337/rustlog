@@ -11,7 +11,7 @@ export function useAvailableLogs(channel: string | null, username: string | null
     const { state, setState } = useContext(store);
 
     // @ts-ignore I don't understand this error :)
-    const { data } = useQuery<[AvailableLogs, Error | undefined]>(["availableLogs", { channel: channel, username: username }], () => {
+    const { data } = useQuery<[AvailableLogs, Error | undefined]>(["availableLogs", { channel: channel, username: username, key: key }], () => {
         if (!channel || !username) {
             return Promise.resolve([[], undefined]);
         }
