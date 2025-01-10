@@ -84,7 +84,7 @@ async fn query_streams(
         }));
 
         if !new_streams.is_empty() {
-            writer_tx.send(new_streams).await?;
+            let _ = writer_tx.send(new_streams).await;
         }
 
         if cursor.is_none() || small_count > 50 || shutdown_rx.has_changed().unwrap_or(false) {
