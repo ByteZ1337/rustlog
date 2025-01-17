@@ -125,6 +125,8 @@ async fn run(config: Config, db: clickhouse::Client) -> anyhow::Result<()> {
     let mut web_handle = tokio::spawn(web::run(app, shutdown_rx.clone(), bot_tx));
 
     tokio::select! {
+        biased;
+        
         _ = shutdown_rx.changed() => {
             debug!("Waiting for tasks to shut down");
 
