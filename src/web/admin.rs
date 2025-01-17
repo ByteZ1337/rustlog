@@ -90,7 +90,9 @@ pub struct UserLoginsRequest {
 #[derive(Deserialize, JsonSchema)]
 pub struct StreamsRequest {
     /// The channel id
-    pub channel_id: String
+    pub channel_id: String,
+    /// The offset
+    pub offset: Option<u64>,
 }
 
 pub async fn add_channels(
@@ -137,8 +139,8 @@ pub async fn find_user_logins(
 
 pub async fn find_streams(
     app: State<App>,
-    Query(StreamsRequest { channel_id }): Query<StreamsRequest>,
+    Query(StreamsRequest { channel_id, offset }): Query<StreamsRequest>,
 ) -> Result<Json<Streams>, Error> {
-    let streams = search_streams(&app.db, &channel_id).await?;
+    let streams = search_streams(&app.db, &channel_id, offset.unwrap_or(0)).await?;
     Ok(Json(streams))
 }

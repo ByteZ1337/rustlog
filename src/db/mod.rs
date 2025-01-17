@@ -345,13 +345,15 @@ pub async fn search_user_logins(app: &State<App>, param: &UserParam) -> Result<U
 
 pub async fn search_streams(
     db: &Client,
-    channel_id: &str
+    channel_id: &str,
+    offset: u64,
 ) -> Result<Streams> {
     let ninety_days_ago = (Utc::now() - Duration::days(90)).timestamp();
     let streams: Vec<Stream> = db
-        .query("SELECT * FROM stream WHERE channel_id = ? AND started_at >= ? ORDER BY started_at DESC LIMIT 200")
+        .query("SELECT * FROM stream WHERE channel_id = ? AND started_at >= ? ORDER BY started_at DESC LIMIT 100 OFFSET ?")
         .bind(channel_id)
         .bind(ninety_days_ago)
+        .bind(offset)
         .fetch_all().await?;
 
     Ok(Streams {
