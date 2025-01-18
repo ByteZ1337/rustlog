@@ -345,7 +345,7 @@ pub async fn search_user_logins(app: &State<App>, param: &UserParam) -> Result<U
 
 pub async fn search_streams(db: &Client, channel_id: &str, offset: u64) -> Result<Streams> {
     let total_count_query = db
-        .query("SELECT count() as cnt FROM stream WHERE channel_id = ?")
+        .query("SELECT count(DISTINCT stream_id) as cnt FROM stream WHERE channel_id = ?")
         .bind(channel_id)
         .fetch_one::<u64>();
 
