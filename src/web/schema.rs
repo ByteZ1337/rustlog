@@ -175,6 +175,8 @@ impl From<Stream> for AssignedStream {
 pub struct Streams {
     /// Channel ID
     pub channel_id: String,
+    /// Total number of streams
+    pub total: u64,
     /// List of known streams
     pub streams: Vec<AssignedStream>,
 }

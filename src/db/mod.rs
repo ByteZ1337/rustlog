@@ -343,21 +343,29 @@ pub async fn search_user_logins(app: &State<App>, param: &UserParam) -> Result<U
     Ok(UserLogins { id, logins })
 }
 
-pub async fn search_streams(
-    db: &Client,
-    channel_id: &str,
-    offset: u64,
-) -> Result<Streams> {
-    let ninety_days_ago = (Utc::now() - Duration::days(90)).timestamp();
-    let streams: Vec<Stream> = db
-        .query("SELECT * FROM stream WHERE channel_id = ? AND started_at >= ? ORDER BY started_at DESC LIMIT 100 OFFSET ?")
+pub async fn search_streams(db: &Client, channel_id: &str, offset: u64) -> Result<Streams> {
+    let total_count_query = db
+        .query("SELECT count() as cnt FROM stream WHERE channel_id = ?")
         .bind(channel_id)
-        .bind(ninety_days_ago)
+        .fetch_one::<u64>();
+
+    let streams_query = db
+        .query(
+            "SELECT * FROM stream WHERE channel_id = ? ORDER BY started_at DESC LIMIT 1 BY stream_id LIMIT 100 OFFSET ?",
+        )
+        .bind(channel_id)
         .bind(offset)
-        .fetch_all().await?;
+        .fetch_all::<Stream>();
+
+    let (total_count, streams) = tokio::try_join!(total_count_query, streams_query)?;
+
+    if total_count == 0 {
+        return Err(Error::NotFound);
+    }
 
     Ok(Streams {
         channel_id: channel_id.to_string(),
+        total: total_count,
         streams: streams.into_iter().map(|s| s.into()).collect(),
     })
 }
