@@ -18,7 +18,7 @@ use tokio::sync::mpsc::Sender;
 use tracing::info;
 
 use crate::db::{check_users_exist, search_streams, search_user_logins};
-use crate::web::schema::{Streams, UserHasLogs, UserLogins, UserParam};
+use crate::web::schema::{ChannelParam, Streams, UserHasLogs, UserLogins, UserParam};
 use crate::{app::App, bot::BotMessage, error::Error};
 
 pub async fn admin_auth(
@@ -90,7 +90,8 @@ pub struct UserLoginsRequest {
 #[derive(Deserialize, JsonSchema)]
 pub struct StreamsRequest {
     /// The channel id
-    pub channel_id: String,
+    #[serde(flatten)]
+    pub channel: ChannelParam,
     /// The offset
     pub offset: Option<u64>,
 }
@@ -139,8 +140,13 @@ pub async fn find_user_logins(
 
 pub async fn find_streams(
     app: State<App>,
-    Query(StreamsRequest { channel_id, offset }): Query<StreamsRequest>,
+    Query(StreamsRequest { channel, offset }): Query<StreamsRequest>,
 ) -> Result<Json<Streams>, Error> {
+    let channel_id = match channel {
+        ChannelParam::ChannelId(id) => id,
+        ChannelParam::Channel(name) => app.get_user_id_by_name(&name).await?,
+    };
+    
     let streams = search_streams(&app.db, &channel_id, offset.unwrap_or(0)).await?;
     Ok(Json(streams))
 }
