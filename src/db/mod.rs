@@ -1,6 +1,6 @@
 use axum::extract::State;
 use clickhouse::Row;
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 use chrono::{DateTime, Datelike, Duration, Utc};
 use clickhouse::{query::RowCursor, Client};
@@ -209,7 +209,7 @@ pub async fn read_random_user_line(
     }
 
     let offset = {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         (0..total_count).choose(&mut rng).ok_or(Error::NotFound)
     }?;
 
@@ -247,7 +247,7 @@ pub async fn read_random_channel_line(
     }
 
     let offset = {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         (0..total_count).choose(&mut rng).ok_or(Error::NotFound)
     }?;
 
@@ -480,6 +480,47 @@ pub async fn get_user_stats(
         message_count: count,
         user_id: user_id.to_owned(),
     })
+}
+
+pub async fn get_user_name_history(db: &Client, user_id: &str) -> Result<Vec<PreviousName>> {
+    #[derive(Deserialize, Row)]
+    struct SingleNameHistory {
+        user_login: String,
+        last_timestamp: i64,
+        first_timestamp: i64,
+    }
+
+    let query = "
+        SELECT trim(LEADING ':' FROM user_login) as user_login,
+        max(last_timestamp) AS last_timestamp,
+        min(first_timestamp) AS first_timestamp
+        FROM username_history
+        WHERE user_id = ?
+        GROUP BY user_login";
+
+    let name_history_rows: Vec<SingleNameHistory> =
+        db.query(query).bind(user_id).fetch_all().await?;
+
+    let mut seen_logins = HashSet::new();
+
+    let names = name_history_rows
+        .into_iter()
+        .filter_map(|row| {
+            if seen_logins.insert(row.user_login.clone()) {
+                Some(PreviousName {
+                    user_login: row.user_login,
+                    last_timestamp: DateTime::from_timestamp_millis(row.last_timestamp)
+                        .expect("Invalid DateTime"),
+                    first_timestamp: DateTime::from_timestamp_millis(row.first_timestamp)
+                        .expect("Invalid DateTime"),
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    Ok(names)
 }
 
 fn apply_limit_offset(query: &mut String, buffer_response: &FlushBufferResponse) {

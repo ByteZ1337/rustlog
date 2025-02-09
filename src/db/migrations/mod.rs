@@ -1,10 +1,12 @@
 mod migratable;
 mod structured;
+mod username_history;
 
 use crate::Result;
 use clickhouse::Client;
 use structured::StructuredMigration;
 use tracing::{debug, info};
+use username_history::UsernameHistoryMigration;
 
 use self::migratable::Migratable;
 
@@ -86,6 +88,8 @@ ENGINE = ReplacingMergeTree
 ORDER BY (channel_id, started_at)",
     )
     .await?;
+
+    run_migration(db, "7_username_history", UsernameHistoryMigration).await?;
 
     Ok(())
 }
