@@ -76,13 +76,6 @@ pub async fn run(app: App, mut shutdown_rx: ShutdownRx, bot_tx: Sender<BotMessag
             }),
         )
         .api_route(
-            "/known-names",
-            get_with(admin::find_user_logins, |mut op| {
-                admin::admin_auth_doc(&mut op);
-                op.tag("Admin").description("Find all logged usernames of a specific user")
-            }),
-        )
-        .api_route(
             "/streams",
             get_with(admin::find_streams, |mut op| {
                 admin::admin_auth_doc(&mut op);

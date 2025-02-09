@@ -1,25 +1,24 @@
 use std::time::Duration;
 
-use aide::axum::IntoApiResponse;
-use axum::{
-    extract::{Path, Query, RawQuery, State},
-    Json,
-    http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Redirect, Response},
-    middleware::Next,
-};
 use super::{
     responders::logs::LogsResponse,
     schema::{
         AvailableLogs, AvailableLogsParams, Channel, ChannelIdType, ChannelLogsByDatePath,
         ChannelLogsStats, ChannelParam, ChannelsList, LogsParams, LogsPathChannel, SearchParams,
-        UserLogPathParams, UserLogsPath, UserLogsStats, UserParam, UserNameHistoryParam
+        UserLogPathParams, UserLogsStats, UserNameHistoryParam, UserParam
     },
+};
+use aide::axum::IntoApiResponse;
+use axum::{
+    extract::{Path, Query, RawQuery, State},
+    http::HeaderMap,
+    response::{IntoResponse, Redirect, Response},
+    Json,
 };
 use axum_extra::{headers::CacheControl, TypedHeader};
 use chrono::{DateTime, Days, Months, NaiveDate, NaiveTime, Utc};
-use tracing::{debug, info};
 
+use crate::web::schema::{UserIdType, UserLogsDatePath};
 use crate::{
     app::App,
     db::{
@@ -28,8 +27,8 @@ use crate::{
     },
     error::Error,
     logs::{schema::LogRangeParams, stream::LogsStream},
-    Result,
     web::schema::LogsPathDate,
+    Result,
 };
 
 // can't have this as a layer because the user logins and ids are passed in a lot of different ways
@@ -118,7 +117,9 @@ pub async fn get_channel_stats(
     }): Path<LogsPathChannel>,
     Query(range_params): Query<LogRangeParams>,
     app: State<App>,
+    headers: HeaderMap,
 ) -> Result<Json<ChannelLogsStats>> {
+    check_logs_auth(&app, headers, None)?;
     let channel_id = match channel_id_type {
         ChannelIdType::Name => app.get_user_id_by_name(&channel).await?,
         ChannelIdType::Id => channel.clone(),
@@ -128,33 +129,14 @@ pub async fn get_channel_stats(
     Ok(Json(stats))
 }
 
-pub async fn get_user_stats_by_name(
-    path: Path<UserLogPathParams>,
-    range_params: Query<LogRangeParams>,
-    app: State<App>,
-) -> Result<Json<UserLogsStats>> {
-    get_user_stats(path, false, range_params, app).await
-}
-
-pub async fn get_user_stats_by_id(
-    path: Path<UserLogPathParams>,
-    range_params: Query<LogRangeParams>,
-    app: State<App>,
-) -> Result<Json<UserLogsStats>> {
-    get_user_stats(path, true, range_params, app).await
-}
-
-async fn get_user_stats(
-    Path(UserLogPathParams {
-        channel_id_type,
-        channel,
-        user,
-    }): Path<UserLogPathParams>,
-    user_is_id: bool,
+pub async fn get_user_stats(
+    Path(user_params): Path<UserLogPathParams>,
     Query(range_params): Query<LogRangeParams>,
     app: State<App>,
+    headers: HeaderMap,
 ) -> Result<Json<UserLogsStats>> {
     let (channel_id, user_id) = resolve_user_params(&user_params, &app).await?;
+    check_logs_auth(&app, headers, Some(&user_id))?;
 
     app.check_opted_out(&channel_id, Some(&user_id))?;
 
@@ -169,7 +151,6 @@ pub async fn get_channel_logs_by_date(
     Query(logs_params): Query<LogsParams>,
     headers: HeaderMap,
 ) -> Result<impl IntoApiResponse> {
-    debug!("Params: {logs_params:?}");
     check_logs_auth(&app, headers, None)?;
 
     let channel_id = match channel_log_params.channel_info.channel_id_type {
@@ -425,7 +406,9 @@ pub async fn search_user_logs(
 pub async fn get_user_name_history(
     app: State<App>,
     Path(UserNameHistoryParam { user_id }): Path<UserNameHistoryParam>,
+    headers: HeaderMap,
 ) -> Result<impl IntoApiResponse> {
+    check_logs_auth(&app, headers, None)?;
     app.check_opted_out(&user_id, None)?;
 
     let names = db::get_user_name_history(&app.db, &user_id).await?;

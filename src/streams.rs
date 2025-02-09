@@ -7,10 +7,10 @@ use std::mem;
 use std::time::Duration;
 use tokio::sync::mpsc::Sender;
 use tokio::time::Instant;
-use tracing::debug;
+use tracing::{debug, error};
 use twitch_api::helix::streams::GetStreamsRequest;
 use twitch_api::helix::CursorRef;
-use twitch_types::StreamId;
+use twitch_api::types::StreamId;
 
 pub async fn run(
     app: App,
@@ -57,13 +57,7 @@ async fn query_streams(
         let mut req = GetStreamsRequest::default().first(100);
         req.after = cursor;
 
-        let resp = match app.helix_client.req_get(req, app.token.as_ref()).await {
-            Ok(resp) => resp,
-            Err(e) => {
-                eprintln!("Error: {:?}", e);
-                break;
-            }
-        };
+        let resp = app.helix_client.req_get(req, app.token.as_ref()).await?;
 
         cursor = resp.pagination.map(Cow::Owned);
         let mut small_count = 0i8;
@@ -79,7 +73,7 @@ async fn query_streams(
             }
 
             Stream::try_from(s)
-                .inspect_err(|e| eprintln!("Error while converting stream: {:?}", e))
+                .inspect_err(|e| error!("Error while converting stream: {:?}", e))
                 .ok()
         }));
 

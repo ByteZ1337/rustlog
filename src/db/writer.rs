@@ -14,7 +14,6 @@ use tokio::{
     time::{sleep, Instant},
 };
 use tracing::{debug, error, info, trace};
-use tracing::field::debug;
 
 const RETRY_COUNT: usize = 20;
 const RETRY_INTERVAL_SECONDS: u64 = 5;

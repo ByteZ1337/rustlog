@@ -8,7 +8,6 @@ use std::{borrow::Cow, fmt::Debug};
 use strum::{Display, EnumString};
 use tmi::{IrcMessageRef, Tag};
 use twitch_api::helix;
-use twitch_api::helix::streams::GetStreamsRequest;
 use uuid::Uuid;
 
 pub const MESSAGES_STRUCTURED_TABLE: &str = "message_structured";

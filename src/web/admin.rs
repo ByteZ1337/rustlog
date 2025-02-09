@@ -15,10 +15,9 @@ use reqwest::StatusCode;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use tokio::sync::mpsc::Sender;
-use tracing::info;
 
-use crate::db::{check_users_exist, search_streams, search_user_logins};
-use crate::web::schema::{ChannelParam, Streams, UserHasLogs, UserLogins, UserParam};
+use crate::db::{check_users_exist, search_streams};
+use crate::web::schema::{ChannelParam, Streams, UserHasLogs};
 use crate::{app::App, bot::BotMessage, error::Error};
 
 pub async fn admin_auth(
@@ -81,13 +80,6 @@ pub struct UsersRequest {
 }
 
 #[derive(Deserialize, JsonSchema)]
-pub struct UserLoginsRequest {
-    /// The user
-    #[serde(flatten)]
-    pub user: UserParam,
-}
-
-#[derive(Deserialize, JsonSchema)]
 pub struct StreamsRequest {
     /// The channel id
     #[serde(flatten)]
@@ -128,14 +120,6 @@ pub async fn check_users_existence(
 ) -> Result<Json<Vec<UserHasLogs>>, Error> {
     let users = check_users_exist(&app.db, &channel, &users).await?;
     Ok(Json(users))
-}
-
-pub async fn find_user_logins(
-    app: State<App>,
-    Query(UserLoginsRequest { user }): Query<UserLoginsRequest>,
-) -> Result<Json<UserLogins>, Error> {
-    let logins = search_user_logins(&app, &user).await?;
-    Ok(Json(logins))
 }
 
 pub async fn find_streams(

@@ -59,12 +59,15 @@ twitch_api = { version = "0.7.0", features = [
     "reqwest",
     "twitch_oauth2",
 ] }
-twitch_types = { git = "https://github.com/twitch-rs/twitch_api/", features = ["time"] }
 tmi = { version = "0.7.0", default-features = false, features = ["simd"] }
 axum-prometheus = "0.8.0"
 metrics-prometheus = "0.8.0"
 axum-extra = { version = "0.10.0", features = ["typed-header"] }
 bitflags = { version = "2.5.0", features = ["serde"] }
+
+[dependencies.twitch_types]
+version = "*"
+features = ["time"]
 
 [dev-dependencies]
 pretty_assertions = "1.4.0"

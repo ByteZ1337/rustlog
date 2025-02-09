@@ -145,14 +145,6 @@ pub struct UserHasLogs {
 }
 
 #[derive(Serialize, JsonSchema)]
-pub struct UserLogins {
-    /// User ID
-    pub id: String,
-    /// List of user logins
-    pub logins: Vec<String>,
-}
-
-#[derive(Serialize, JsonSchema)]
 pub struct AssignedStream {
     /// Stream ID
     pub id: String,
