@@ -37,7 +37,7 @@ mod responders;
 pub mod schema;
 mod trace_layer;
 
-const CAPABILITIES: &[&str] = &["arbitrary-range-query", "search", "stats"];
+const CAPABILITIES: &[&str] = &["arbitrary-range-query", "search", "stats", "namehistory"];
 
 pub async fn run(app: App, mut shutdown_rx: ShutdownRx, bot_tx: Sender<BotMessage>) {
     aide::generate::on_error(|error| {
